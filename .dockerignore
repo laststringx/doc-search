@@ -1,0 +1,17 @@
+# Docker ignore file
+target/
+.git/
+.gitignore
+README.md
+*.md
+.DS_Store
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+node_modules/
+npm-debug.log
+yarn-error.log
+.docker/
+docker-compose.override.yml

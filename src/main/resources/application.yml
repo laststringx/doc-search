@@ -1,0 +1,378 @@
+# Application Configuration
+spring:
+  application:
+    name: enterprise-document-search
+  profiles:
+    active: test
+
+server:
+  port: 8080
+
+# JWT Configuration
+app:
+  jwt:
+    secret: ${JWT_SECRET:myVeryLongSecretKeyThatIsAtLeast256BitsLongForHS256Algorithm123456789}
+    expiration: ${JWT_EXPIRATION:86400}  # 24 hours in seconds
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800}  # 7 days in seconds
+
+# Logging Configuration
+logging:
+  level:
+    com.enterprise.documentsearch: INFO
+    org.springframework.web: DEBUG
+    org.springframework.security: DEBUG
+
+# Management and Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+---
+# Development Profile Configuration
+spring:
+  config:
+    activate:
+      on-profile: development
+  
+  # Database Configuration
+  datasource:
+    url: jdbc:mysql://localhost:3306/enterprise_document_search?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+        use_sql_comments: true
+    database-platform: org.hibernate.dialect.MySQLDialect
+
+  # Redis Configuration
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000ms
+      jedis:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+  # Elasticsearch Configuration
+  elasticsearch:
+    uris: http://localhost:9200
+    socket-timeout: 10s
+    connection-timeout: 5s
+
+  # Kafka Configuration
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: 3
+      batch-size: 16384
+      linger-ms: 5
+      buffer-memory: 33554432
+    consumer:
+      group-id: document-search-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      properties:
+        spring.json.trusted.packages: "com.enterprise.documentsearch"
+
+---
+# Test Profile Configuration (In-Memory Database)
+spring:
+  config:
+    activate:
+      on-profile: test
+  
+  # H2 In-Memory Database Configuration
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password: 
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+  
+  # JPA Configuration for H2
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+        use_sql_comments: true
+    database-platform: org.hibernate.dialect.H2Dialect
+  
+  # H2 Console (for debugging)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  # Disable external services for testing
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.elasticsearch.ElasticsearchRestClientAutoConfiguration
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+
+---
+# Docker Profile Configuration
+spring:
+  config:
+    activate:
+      on-profile: docker
+  
+  # Database Configuration for Docker
+  datasource:
+    url: jdbc:mysql://mysql:3306/enterprise_document_search?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+
+  # JPA Configuration for Docker
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+
+  # Redis Configuration for Docker
+  data:
+    redis:
+      host: redis
+      port: 6379
+      timeout: 2000ms
+
+  # Elasticsearch Configuration for Docker
+  elasticsearch:
+    uris: http://elasticsearch:9200
+
+  # Kafka Configuration for Docker
+  kafka:
+    bootstrap-servers: kafka:29092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: document-search-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: earliest
+      properties:
+        spring.json.trusted.packages: "com.enterprise.documentsearch"
+
+---
+# Production Profile Configuration
+spring:
+  config:
+    activate:
+      on-profile: production
+  
+  # Database Configuration for Production
+  datasource:
+    url: ${DATABASE_URL:jdbc:mysql://localhost:3306/enterprise_document_search}
+    username: ${DATABASE_USERNAME:appuser}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX_SIZE:50}
+      minimum-idle: ${DB_POOL_MIN_IDLE:10}
+      connection-timeout: ${DB_CONNECTION_TIMEOUT:30000}
+      idle-timeout: ${DB_IDLE_TIMEOUT:300000}
+      max-lifetime: ${DB_MAX_LIFETIME:1800000}
+      leak-detection-threshold: ${DB_LEAK_DETECTION:60000}
+
+  # JPA Configuration for Production
+  jpa:
+    hibernate:
+      ddl-auto: ${DDL_AUTO:validate}
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
+        cache:
+          use_second_level_cache: true
+          use_query_cache: true
+          region:
+            factory_class: org.hibernate.cache.jcache.JCacheRegionFactory
+
+  # Redis Configuration for Production
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:5000ms}
+      lettuce:
+        pool:
+          max-active: ${REDIS_POOL_MAX_ACTIVE:20}
+          max-idle: ${REDIS_POOL_MAX_IDLE:10}
+          min-idle: ${REDIS_POOL_MIN_IDLE:5}
+          max-wait: ${REDIS_POOL_MAX_WAIT:5000ms}
+
+  # Elasticsearch Configuration for Production
+  elasticsearch:
+    uris: ${ELASTICSEARCH_URIS:http://localhost:9200}
+    username: ${ELASTICSEARCH_USERNAME:}
+    password: ${ELASTICSEARCH_PASSWORD:}
+    socket-timeout: ${ELASTICSEARCH_SOCKET_TIMEOUT:30s}
+    connection-timeout: ${ELASTICSEARCH_CONNECTION_TIMEOUT:10s}
+
+  # Kafka Configuration for Production
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      retries: ${KAFKA_PRODUCER_RETRIES:3}
+      batch-size: ${KAFKA_PRODUCER_BATCH_SIZE:16384}
+      linger-ms: ${KAFKA_PRODUCER_LINGER_MS:10}
+      buffer-memory: ${KAFKA_PRODUCER_BUFFER_MEMORY:33554432}
+      acks: ${KAFKA_PRODUCER_ACKS:all}
+      compression-type: ${KAFKA_PRODUCER_COMPRESSION:snappy}
+    consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:document-search-group}
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      max-poll-records: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:500}
+      fetch-min-size: ${KAFKA_CONSUMER_FETCH_MIN_SIZE:1024}
+      properties:
+        spring.json.trusted.packages: "com.enterprise.documentsearch"
+        
+  # Performance and Caching
+  cache:
+    type: redis
+    redis:
+      time-to-live: ${CACHE_TTL:3600000} # 1 hour
+
+# Production Server Configuration
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: ${CONTEXT_PATH:/}
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
+  tomcat:
+    max-threads: ${TOMCAT_MAX_THREADS:200}
+    min-spare-threads: ${TOMCAT_MIN_SPARE_THREADS:10}
+    max-connections: ${TOMCAT_MAX_CONNECTIONS:8192}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:100}
+
+# Production JWT Configuration
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: ${JWT_EXPIRATION:3600} # 1 hour in production
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:86400} # 24 hours
+
+# Production Logging Configuration
+logging:
+  level:
+    root: ${LOG_LEVEL_ROOT:INFO}
+    com.enterprise.documentsearch: ${LOG_LEVEL_APP:INFO}
+    org.springframework.security: ${LOG_LEVEL_SECURITY:WARN}
+    org.hibernate: ${LOG_LEVEL_HIBERNATE:WARN}
+    org.springframework.web: ${LOG_LEVEL_WEB:WARN}
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{traceId:-},%X{spanId:-}] %logger{36} - %msg%n"
+  file:
+    name: ${LOG_FILE:./logs/enterprise-document-search.log}
+    max-size: ${LOG_FILE_MAX_SIZE:10MB}
+    max-history: ${LOG_FILE_MAX_HISTORY:30}
+
+# Production Management and Monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${ACTUATOR_ENDPOINTS:health,info,metrics,prometheus}
+      base-path: ${ACTUATOR_BASE_PATH:/actuator}
+  endpoint:
+    health:
+      show-details: ${HEALTH_SHOW_DETAILS:when-authorized}
+      show-components: always
+      probes:
+        enabled: true
+    metrics:
+      enabled: true
+  health:
+    elasticsearch:
+      enabled: true
+    redis:
+      enabled: true
+    db:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: ${PROMETHEUS_ENABLED:true}
+      jmx:
+        enabled: false
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 100ms,200ms,300ms,500ms,1s
+
+# Spring Doc OpenAPI Configuration for Production
+springdoc:
+  api-docs:
+    path: ${API_DOCS_PATH:/v3/api-docs}
+    enabled: ${API_DOCS_ENABLED:true}
+  swagger-ui:
+    path: ${SWAGGER_UI_PATH:/swagger-ui.html}
+    enabled: ${SWAGGER_UI_ENABLED:true}
+    try-it-out-enabled: ${SWAGGER_TRY_IT_OUT:false}
+    operations-sorter: alpha
+    tags-sorter: alpha
+    display-request-duration: true
