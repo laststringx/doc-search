@@ -40,9 +40,20 @@ public class AuthController {
     @PostMapping("/login")
     @Operation(summary = "User login", description = "Authenticate user and return JWT token")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest loginRequest) {
-        log.info("Login attempt for user: {}", loginRequest.getUsernameOrEmail());
+        log.info("Login attempt for user: {} in tenant: {}", loginRequest.getUsernameOrEmail(), loginRequest.getTenantId());
 
         try {
+            // First validate that user exists in the specified tenant
+            User user = userService.findByEmailAndTenant(loginRequest.getUsernameOrEmail(), loginRequest.getTenantId());
+            if (user == null) {
+                log.warn("User {} not found in tenant {}", loginRequest.getUsernameOrEmail(), loginRequest.getTenantId());
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "Invalid credentials");
+                error.put("message", "Username/email or password is incorrect");
+                return ResponseEntity.status(401).body(error);
+            }
+
+            // Authenticate with Spring Security
             Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                     loginRequest.getUsernameOrEmail(),
@@ -51,27 +62,37 @@ public class AuthController {
             );
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
-            User user = (User) authentication.getPrincipal();
+            User authenticatedUser = (User) authentication.getPrincipal();
+            
+            // Verify tenant matches (additional security check)
+            if (!authenticatedUser.getTenantId().equals(loginRequest.getTenantId())) {
+                log.warn("Tenant mismatch for user {}: expected {}, got {}", 
+                    authenticatedUser.getUsername(), loginRequest.getTenantId(), authenticatedUser.getTenantId());
+                Map<String, String> error = new HashMap<>();
+                error.put("error", "Invalid credentials");
+                error.put("message", "Username/email or password is incorrect");
+                return ResponseEntity.status(401).body(error);
+            }
 
             // Update last login date
-            userService.updateLastLoginDate(user.getUsername());
+            userService.updateLastLoginDate(authenticatedUser.getUsername());
 
             // Generate tokens
             String jwt = jwtTokenUtil.generateToken(authentication);
-            String refreshToken = jwtTokenUtil.generateRefreshToken(user.getUsername());
+            String refreshToken = jwtTokenUtil.generateRefreshToken(authenticatedUser.getUsername());
 
             Map<String, Object> response = new HashMap<>();
             response.put("token", jwt);
             response.put("refreshToken", refreshToken);
             response.put("type", "Bearer");
             response.put("expiresIn", jwtTokenUtil.getExpirationTime());
-            response.put("user", createUserResponse(user));
+            response.put("user", createUserResponse(authenticatedUser));
 
-            log.info("User {} logged in successfully", user.getUsername());
+            log.info("User {} logged in successfully in tenant {}", authenticatedUser.getUsername(), authenticatedUser.getTenantId());
             return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("Login failed for user: {}", loginRequest.getUsernameOrEmail(), e);
+            log.error("Login failed for user: {} in tenant: {}", loginRequest.getUsernameOrEmail(), loginRequest.getTenantId(), e);
             Map<String, String> error = new HashMap<>();
             error.put("error", "Invalid credentials");
             error.put("message", "Username/email or password is incorrect");
@@ -231,12 +252,17 @@ public class AuthController {
         
         @jakarta.validation.constraints.NotBlank(message = "Password is required")
         private String password;
+        
+        @jakarta.validation.constraints.NotBlank(message = "Tenant ID is required")
+        private String tenantId;
 
         // Getters and setters
         public String getUsernameOrEmail() { return usernameOrEmail; }
         public void setUsernameOrEmail(String usernameOrEmail) { this.usernameOrEmail = usernameOrEmail; }
         public String getPassword() { return password; }
         public void setPassword(String password) { this.password = password; }
+        public String getTenantId() { return tenantId; }
+        public void setTenantId(String tenantId) { this.tenantId = tenantId; }
     }
 
     public static class RegisterRequest {

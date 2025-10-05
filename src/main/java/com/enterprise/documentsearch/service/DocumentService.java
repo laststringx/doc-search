@@ -2,8 +2,11 @@ package com.enterprise.documentsearch.service;
 
 import com.enterprise.documentsearch.model.Document;
 import com.enterprise.documentsearch.repository.DocumentRepository;
-import lombok.RequiredArgsConstructor;
+
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.CachePut;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -13,34 +16,48 @@ import java.util.List;
 import java.util.Optional;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 @Transactional
 public class DocumentService {
     
     private final DocumentRepository documentRepository;
+    private final Optional<ElasticsearchService> elasticsearchService;
     
-    /**
-     * Save a document
-     */
-    public Document saveDocument(Document document) {
-        log.info("Saving document with title: {} for tenant: {}", document.getTitle(), document.getTenantId());
-        return documentRepository.save(document);
+    public DocumentService(DocumentRepository documentRepository, Optional<ElasticsearchService> elasticsearchService) {
+        this.documentRepository = documentRepository;
+        this.elasticsearchService = elasticsearchService;
     }
     
     /**
-     * Find document by tenant and id
+     * Save a document with cache eviction and update
+     */
+    @CachePut(value = "documents", key = "#document.tenantId + ':' + #document.id")
+    @CacheEvict(value = "searchResults", allEntries = true) // Clear search cache when document changes
+    public Document saveDocument(Document document) {
+        log.info("Saving document with title: {} for tenant: {}", document.getTitle(), document.getTenantId());
+        Document savedDocument = documentRepository.save(document);
+        
+        // Index in Elasticsearch asynchronously if available
+        elasticsearchService.ifPresent(service -> service.indexDocumentAsync(savedDocument));
+        
+        return savedDocument;
+    }
+    
+    /**
+     * Find document by tenant and id with caching
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = "documents", key = "#tenantId + ':' + #id")
     public Optional<Document> findDocument(String tenantId, Long id) {
         log.debug("Finding document with id: {} for tenant: {}", id, tenantId);
         return documentRepository.findByTenantIdAndId(tenantId, id);
     }
     
     /**
-     * Find all documents for a tenant with pagination
+     * Find all documents for a tenant with pagination and caching
      */
     @Transactional(readOnly = true)
+    @Cacheable(value = "documentMetadata", key = "#tenantId + ':page:' + #pageable.pageNumber + ':size:' + #pageable.pageSize")
     public Page<Document> findDocumentsByTenant(String tenantId, Pageable pageable) {
         log.debug("Finding documents for tenant: {} with pagination", tenantId);
         return documentRepository.findByTenantId(tenantId, pageable);

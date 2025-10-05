@@ -61,6 +61,9 @@ public class UserService implements UserDetailsService {
             user.setRoles(Set.of(Role.USER));
         }
         
+        // Set user as active by default
+        user.setActive(true);
+        
         return userRepository.save(user);
     }
 
@@ -163,6 +166,14 @@ public class UserService implements UserDetailsService {
     @Transactional(readOnly = true)
     public Optional<User> getUserByEmail(String email) {
         return userRepository.findByEmail(email);
+    }
+    
+    /**
+     * Find user by email/username and tenant ID
+     */
+    @Transactional(readOnly = true)
+    public User findByEmailAndTenant(String emailOrUsername, String tenantId) {
+        return userRepository.findByEmailAndTenant(emailOrUsername, tenantId).orElse(null);
     }
 
     /**

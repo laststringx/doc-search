@@ -1,0 +1,94 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'document-search-cluster'
+    replica: 'prometheus-1'
+
+# Rules for alerting
+rule_files:
+  - "alert_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Spring Boot applications
+  - job_name: 'document-search-app'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets: 
+        - 'app-1:8080'
+        - 'app-2:8080'
+        - 'app-3:8080'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '(.+):.*'
+        target_label: hostname
+        replacement: '${1}'
+
+  # MySQL monitoring
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql-master:3306']
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+
+  # Elasticsearch cluster
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: 
+        - 'elasticsearch-1:9200'
+        - 'elasticsearch-2:9200'
+        - 'elasticsearch-3:9200'
+    scrape_interval: 30s
+    metrics_path: '/_prometheus/metrics'
+
+  # Redis cluster
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+        - 'redis-1:7001'
+        - 'redis-2:7002'
+        - 'redis-3:7003'
+        - 'redis-4:7004'
+        - 'redis-5:7005'
+        - 'redis-6:7006'
+    scrape_interval: 30s
+
+  # Nginx load balancer
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    scrape_interval: 30s
+    metrics_path: '/nginx_status'
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+# Alerting configuration
+alerting:
+  alert_relabel_configs:
+    - source_labels: [alertname]
+      target_label: severity
+      regex: 'HighErrorRate|DatabaseDown|ElasticsearchDown'
+      replacement: 'critical'
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 10GB
+    wal-compression: true
