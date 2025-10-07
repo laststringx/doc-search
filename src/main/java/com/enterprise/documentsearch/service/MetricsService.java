@@ -8,7 +8,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -131,12 +130,10 @@ public class MetricsService {
      */
     public void recordDocumentIndexing(String tenantId, Duration duration, boolean success) {
         Timer indexTimer = getSearchTimer("total", "indexing_latency");
-                .tag("tenant", tenantId)
-                .register(meterRegistry)
-                .record(durationMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        indexTimer.record(duration);
         
         log.debug("Recorded document index: tenant={}, duration={}ms, successful={}", 
-                tenantId, durationMs, successful);
+                tenantId, duration.toMillis(), success);
     }
 
     /**
@@ -169,29 +166,19 @@ public class MetricsService {
     }
 
     /**
-     * Record cache hit
+     * Record search time 
      */
-    public void recordCacheHit(String cacheType, String tenantId) {
-        Counter.builder("cache.hit.total")
-                .tag("cache_type", cacheType)
-                .tag("tenant", tenantId)
+    public void recordSearchTime(long durationMs) {
+        Timer.builder("search.duration")
                 .register(meterRegistry)
-                .increment();
-        
-        log.debug("Recorded cache hit: type={}, tenant={}", cacheType, tenantId);
+                .record(durationMs, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     /**
-     * Record cache miss
+     * Record search error
      */
-    public void recordCacheMiss(String cacheType, String tenantId) {
-        Counter.builder("cache.miss.total")
-                .tag("cache_type", cacheType)
-                .tag("tenant", tenantId)
-                .register(meterRegistry)
-                .increment();
-        
-        log.debug("Recorded cache miss: type={}, tenant={}", cacheType, tenantId);
+    public void recordSearchError(String errorType) {
+        getSearchCounter("total", "search_errors:" + errorType).increment();
     }
 
     /**
@@ -246,5 +233,31 @@ public class MetricsService {
         
         log.debug("Recorded Elasticsearch operation: operation={}, duration={}ms, successful={}", 
                 operation, durationMs, successful);
+    }
+
+    /**
+     * Get or create a search counter
+     */
+    private Counter getSearchCounter(String tenant, String operation) {
+        String key = tenant + ":" + operation;
+        return searchCounters.computeIfAbsent(key, k -> 
+            Counter.builder("search.counter")
+                .tag("tenant", tenant)
+                .tag("operation", operation)
+                .register(meterRegistry)
+        );
+    }
+
+    /**
+     * Get or create a search timer
+     */
+    private Timer getSearchTimer(String tenant, String operation) {
+        String key = tenant + ":" + operation;
+        return searchTimers.computeIfAbsent(key, k -> 
+            Timer.builder("search.timer")
+                .tag("tenant", tenant)
+                .tag("operation", operation)
+                .register(meterRegistry)
+        );
     }
 }

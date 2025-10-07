@@ -31,22 +31,14 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         
-        <!-- Reactive WebFlux for high concurrency -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
+        <!-- Traditional Spring MVC for web layer -->
         
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
         
-        <!-- Reactive R2DBC for non-blocking database access -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-r2dbc</artifactId>
-        </dependency>
+        <!-- Using traditional JPA for database access -->
         
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -70,12 +62,7 @@
             <version>8.0.33</version>
         </dependency>
         
-        <!-- R2DBC MySQL Driver for reactive database access -->
-        <dependency>
-            <groupId>io.asyncer</groupId>
-            <artifactId>r2dbc-mysql</artifactId>
-            <version>1.0.2</version>
-        </dependency>
+        <!-- Using traditional MySQL JDBC driver -->
         
         <!-- HikariCP for production connection pooling -->
         <dependency>
@@ -159,11 +146,7 @@
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
         </dependency>
         
-        <!-- Redis cluster support -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-data-redis-reactive</artifactId>
-        </dependency>
+        <!-- Redis cluster support (using traditional blocking Redis) -->
         
         <!-- Caffeine for L1 cache -->
         <dependency>
@@ -243,17 +226,9 @@
             <version>2.1.0</version>
         </dependency>
         
-        <dependency>
-            <groupId>io.github.resilience4j</groupId>
-            <artifactId>resilience4j-reactor</artifactId>
-            <version>2.1.0</version>
-        </dependency>
+        <!-- Removed resilience4j-reactor as we're not using reactive programming -->
 
-        <!-- Async Processing and WebFlux support -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
+        <!-- Using traditional Spring MVC instead of WebFlux -->
 
         <!-- Enhanced Connection Pooling -->
         <dependency>

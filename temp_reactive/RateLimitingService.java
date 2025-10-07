@@ -13,9 +13,9 @@ import io.lettuce.core.codec.RedisCodec;
 import io.lettuce.core.codec.StringCodec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
-import reactor.core.publisher.Mono;
+import lombok.extern.slf4j.Slf4j;
 
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentMap;
  * Supports per-tenant and global rate limiting for 1000+ concurrent requests
  */
 @Service
+@Slf4j
 public class RateLimitingService {
 
     private final ProxyManager<String> proxyManager;
@@ -66,108 +67,107 @@ public class RateLimitingService {
     /**
      * Check if request is allowed for specific tenant
      */
-    public Mono<Boolean> isAllowed(String tenantId, String userId) {
+    public Boolean isAllowed(String tenantId, String userId) {
         if (!rateLimitingEnabled) {
-            return Mono.just(true);
+            return true;
         }
 
-        return checkTenantRateLimit(tenantId)
-                .flatMap(tenantAllowed -> {
-                    if (!tenantAllowed) {
-                        return Mono.just(false);
-                    }
-                    return checkUserRateLimit(tenantId, userId);
-                })
-                .flatMap(userAllowed -> {
-                    if (!userAllowed) {
-                        return Mono.just(false);
-                    }
-                    return checkGlobalRateLimit();
-                });
+        try {
+            boolean tenantAllowed = checkTenantRateLimit(tenantId);
+            if (!tenantAllowed) {
+                return false;
+            }
+            
+            boolean userAllowed = checkUserRateLimit(tenantId, userId);
+            if (!userAllowed) {
+                return false;
+            }
+            
+            return checkGlobalRateLimit();
+        } catch (Exception e) {
+            log.warn("Rate limiting check failed for tenant: {}, user: {}, error: {}", tenantId, userId, e.getMessage());
+            return false;
+        }
     }
 
     /**
      * Check if search request is allowed for tenant
      */
-    public Mono<Boolean> isSearchAllowed(String tenantId, String userId) {
+    public Boolean isSearchAllowed(String tenantId, String userId) {
         if (!rateLimitingEnabled) {
-            return Mono.just(true);
+            return true;
         }
 
-        String searchKey = "search:" + tenantId;
-        String userSearchKey = "user-search:" + tenantId + ":" + userId;
+        try {
+            String searchKey = "search:" + tenantId;
+            String userSearchKey = "user-search:" + tenantId + ":" + userId;
 
-        return Mono.fromFuture(() -> 
-                getTenantSearchBucket(searchKey).tryConsume(1)
-        )
-        .flatMap(tenantAllowed -> {
+            boolean tenantAllowed = getTenantSearchBucket(searchKey).tryConsume(1).get();
             if (!tenantAllowed) {
-                return Mono.just(false);
+                return false;
             }
-            return Mono.fromFuture(() -> 
-                    getUserSearchBucket(userSearchKey).tryConsume(1)
-            );
-        });
+            
+            return getUserSearchBucket(userSearchKey).tryConsume(1).get();
+        } catch (Exception e) {
+            log.warn("Search rate limiting check failed for tenant: {}, user: {}, error: {}", 
+                    tenantId, userId, e.getMessage());
+            return false;
+        }
     }
 
     /**
      * Check if file upload is allowed for tenant
      */
-    public Mono<Boolean> isUploadAllowed(String tenantId, String userId, long fileSize) {
+    public Boolean isUploadAllowed(String tenantId, String userId, long fileSize) {
         if (!rateLimitingEnabled) {
-            return Mono.just(true);
+            return true;
         }
 
-        String uploadKey = "upload:" + tenantId;
-        String userUploadKey = "user-upload:" + tenantId + ":" + userId;
+        try {
+            String uploadKey = "upload:" + tenantId;
+            String userUploadKey = "user-upload:" + tenantId + ":" + userId;
 
-        // Calculate tokens needed based on file size (1 token per MB)
-        long tokensNeeded = Math.max(1, fileSize / (1024 * 1024));
+            // Calculate tokens needed based on file size (1 token per MB)
+            long tokensNeeded = Math.max(1, fileSize / (1024 * 1024));
 
-        return Mono.fromFuture(() -> 
-                getTenantUploadBucket(uploadKey).tryConsume(tokensNeeded)
-        )
-        .flatMap(tenantAllowed -> {
+            boolean tenantAllowed = getTenantUploadBucket(uploadKey).tryConsume(tokensNeeded).get();
             if (!tenantAllowed) {
-                return Mono.just(false);
+                return false;
             }
-            return Mono.fromFuture(() -> 
-                    getUserUploadBucket(userUploadKey).tryConsume(tokensNeeded)
-            );
-        });
+            
+            return getUserUploadBucket(userUploadKey).tryConsume(tokensNeeded).get();
+        } catch (Exception e) {
+            log.warn("Upload rate limiting check failed for tenant: {}, user: {}, error: {}", 
+                    tenantId, userId, e.getMessage());
+            return false;
+        }
     }
 
     /**
      * Get remaining tokens for tenant
      */
-    public Mono<Long> getRemainingTokens(String tenantId) {
-        String key = "tenant:" + tenantId;
-        return Mono.fromFuture(() -> 
-                getTenantBucket(key).getAvailableTokens()
-        );
+    public Long getRemainingTokens(String tenantId) {
+        try {
+            String key = "tenant:" + tenantId;
+            return getTenantBucket(key).getAvailableTokens().get();
+        } catch (Exception e) {
+            log.warn("Failed to get remaining tokens for tenant: {}, error: {}", tenantId, e.getMessage());
+            return 0L;
+        }
     }
 
     /**
      * Get rate limit status for tenant
      */
-    public Mono<RateLimitStatus> getRateLimitStatus(String tenantId, String userId) {
-        String tenantKey = "tenant:" + tenantId;
-        String userKey = "user:" + tenantId + ":" + userId;
-        String globalKey = "global";
+    public RateLimitStatus getRateLimitStatus(String tenantId, String userId) {
+        try {
+            String tenantKey = "tenant:" + tenantId;
+            String userKey = "user:" + tenantId + ":" + userId;
+            String globalKey = "global";
 
-        return Mono.fromFuture(() -> 
-                getTenantBucket(tenantKey).getAvailableTokens()
-        )
-        .zipWith(Mono.fromFuture(() -> 
-                getUserBucket(userKey).getAvailableTokens()
-        ))
-        .zipWith(Mono.fromFuture(() -> 
-                getGlobalBucket(globalKey).getAvailableTokens()
-        ))
-        .map(tuple -> {
-            long tenantTokens = tuple.getT1().getT1();
-            long userTokens = tuple.getT1().getT2();
-            long globalTokens = tuple.getT2();
+            long tenantTokens = getTenantBucket(tenantKey).getAvailableTokens().get();
+            long userTokens = getUserBucket(userKey).getAvailableTokens().get();
+            long globalTokens = getGlobalBucket(globalKey).getAvailableTokens().get();
 
             return new RateLimitStatus(
                     tenantTokens,
@@ -177,55 +177,77 @@ public class RateLimitingService {
                     100L, // User capacity
                     globalCapacity
             );
-        });
+        } catch (Exception e) {
+            log.warn("Failed to get rate limit status for tenant: {}, user: {}, error: {}", 
+                    tenantId, userId, e.getMessage());
+            return new RateLimitStatus(0L, 0L, 0L, perTenantCapacity, 100L, globalCapacity);
+        }
     }
 
     /**
      * Reset rate limits for tenant (admin operation)
      */
-    public Mono<Void> resetTenantLimits(String tenantId) {
-        return Mono.fromRunnable(() -> {
+    public void resetTenantLimits(String tenantId) {
+        try {
             String tenantKey = "tenant:" + tenantId;
             bucketCache.remove(tenantKey);
             // Redis bucket will be recreated on next access
-        });
+            log.info("Reset rate limits for tenant: {}", tenantId);
+        } catch (Exception e) {
+            log.warn("Failed to reset rate limits for tenant: {}, error: {}", tenantId, e.getMessage());
+        }
     }
 
     /**
      * Set custom rate limit for tenant
      */
-    public Mono<Void> setCustomTenantLimit(String tenantId, long capacity, long refillTokens, Duration refillPeriod) {
-        String key = "custom-tenant:" + tenantId;
-        
-        BucketConfiguration configuration = BucketConfiguration.builder()
-                .addLimit(Bandwidth.simple(capacity, refillPeriod).withInitialTokens(refillTokens))
-                .build();
+    public void setCustomTenantLimit(String tenantId, long capacity, long refillTokens, Duration refillPeriod) {
+        try {
+            String key = "custom-tenant:" + tenantId;
+            
+            BucketConfiguration configuration = BucketConfiguration.builder()
+                    .addLimit(Bandwidth.simple(capacity, refillPeriod).withInitialTokens(refillTokens))
+                    .build();
 
-        AsyncBucketProxy bucket = proxyManager.builder().build(key, configuration);
-        bucketCache.put(key, bucket);
-        
-        return Mono.empty();
+            AsyncBucketProxy bucket = proxyManager.builder().build(key, configuration);
+            bucketCache.put(key, bucket);
+            
+            log.info("Set custom rate limit for tenant: {} - capacity: {}, refill: {} tokens per {}", 
+                    tenantId, capacity, refillTokens, refillPeriod);
+        } catch (Exception e) {
+            log.warn("Failed to set custom rate limit for tenant: {}, error: {}", tenantId, e.getMessage());
+        }
     }
 
-    private Mono<Boolean> checkTenantRateLimit(String tenantId) {
-        String key = "tenant:" + tenantId;
-        return Mono.fromFuture(() -> 
-                getTenantBucket(key).tryConsume(1)
-        );
+    private boolean checkTenantRateLimit(String tenantId) {
+        try {
+            String key = "tenant:" + tenantId;
+            return getTenantBucket(key).tryConsume(1).get();
+        } catch (Exception e) {
+            log.warn("Tenant rate limit check failed for: {}, error: {}", tenantId, e.getMessage());
+            return false;
+        }
     }
 
-    private Mono<Boolean> checkUserRateLimit(String tenantId, String userId) {
-        String key = "user:" + tenantId + ":" + userId;
-        return Mono.fromFuture(() -> 
-                getUserBucket(key).tryConsume(1)
-        );
+    private boolean checkUserRateLimit(String tenantId, String userId) {
+        try {
+            String key = "user:" + tenantId + ":" + userId;
+            return getUserBucket(key).tryConsume(1).get();
+        } catch (Exception e) {
+            log.warn("User rate limit check failed for tenant: {}, user: {}, error: {}", 
+                    tenantId, userId, e.getMessage());
+            return false;
+        }
     }
 
-    private Mono<Boolean> checkGlobalRateLimit() {
-        String key = "global";
-        return Mono.fromFuture(() -> 
-                getGlobalBucket(key).tryConsume(1)
-        );
+    private boolean checkGlobalRateLimit() {
+        try {
+            String key = "global";
+            return getGlobalBucket(key).tryConsume(1).get();
+        } catch (Exception e) {
+            log.warn("Global rate limit check failed, error: {}", e.getMessage());
+            return false;
+        }
     }
 
     private AsyncBucketProxy getTenantBucket(String key) {

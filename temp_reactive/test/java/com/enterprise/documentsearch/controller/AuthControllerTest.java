@@ -101,7 +101,7 @@ class AuthControllerTest {
                     .thenReturn(mockAuth);
             when(userService.findByEmailAndTenant("test@example.com", "tenant_123"))
                     .thenReturn(testUser);
-            when(jwtTokenUtil.generateToken(any(UserDetails.class)))
+            when(jwtTokenUtil.generateToken(any(Authentication.class)))
                     .thenReturn("mock.jwt.token");
 
             // When & Then
@@ -116,7 +116,7 @@ class AuthControllerTest {
 
             verify(authenticationManager).authenticate(any(UsernamePasswordAuthenticationToken.class));
             verify(userService).findByEmailAndTenant("test@example.com", "tenant_123");
-            verify(jwtTokenUtil).generateToken(any(UserDetails.class));
+            verify(jwtTokenUtil).generateToken(any(Authentication.class));
         }
 
         @Test
@@ -186,7 +186,7 @@ class AuthControllerTest {
             newUser.setActive(true);
             newUser.setRoles(Set.of(Role.USER));
 
-            when(userService.registerUser(any(User.class))).thenReturn(newUser);
+            when(userService.createUser(any(User.class))).thenReturn(newUser);
 
             // When & Then
             mockMvc.perform(post("/api/v1/auth/register")
@@ -195,16 +195,16 @@ class AuthControllerTest {
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.message").value("User registered successfully"))
                     .andExpect(jsonPath("$.user.username").value("newuser"))
-                    .andExpect(jsonPath("$.user.email").value("newuser@example.com"));
+                    .andExpected(jsonPath("$.user.email").value("newuser@example.com"));
 
-            verify(userService).registerUser(any(User.class));
+            verify(userService).createUser(any(User.class));
         }
 
         @Test
         @DisplayName("Should fail registration with existing email")
         void shouldFailRegistrationWithExistingEmail() throws Exception {
             // Given
-            when(userService.registerUser(any(User.class)))
+            when(userService.createUser(any(User.class)))
                     .thenThrow(new RuntimeException("Email already exists"));
 
             // When & Then
@@ -214,7 +214,7 @@ class AuthControllerTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.error").value("Email already exists"));
 
-            verify(userService).registerUser(any(User.class));
+            verify(userService).createUser(any(User.class));
         }
 
         @Test
@@ -259,10 +259,10 @@ class AuthControllerTest {
             Map<String, String> refreshRequest = new HashMap<>();
             refreshRequest.put("token", "old.jwt.token");
 
-            when(jwtTokenUtil.extractUsername("old.jwt.token")).thenReturn("testuser");
-            when(jwtTokenUtil.canTokenBeRefreshed("old.jwt.token")).thenReturn(true);
-            when(userService.findByUsernameAndTenant("testuser", anyString())).thenReturn(testUser);
-            when(jwtTokenUtil.refreshToken("old.jwt.token")).thenReturn("new.jwt.token");
+            when(jwtTokenUtil.getUsernameFromToken("old.jwt.token")).thenReturn("testuser");
+            when(jwtTokenUtil.isTokenExpired("old.jwt.token")).thenReturn(false);
+            when(userService.findByEmailAndTenant("testuser", anyString())).thenReturn(testUser);
+            when(jwtTokenUtil.generateRefreshToken("testuser")).thenReturn("new.jwt.token");
 
             // When & Then
             mockMvc.perform(post("/api/v1/auth/refresh")
@@ -271,9 +271,9 @@ class AuthControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.token").value("new.jwt.token"));
 
-            verify(jwtTokenUtil).extractUsername("old.jwt.token");
-            verify(jwtTokenUtil).canTokenBeRefreshed("old.jwt.token");
-            verify(jwtTokenUtil).refreshToken("old.jwt.token");
+            verify(jwtTokenUtil).getUsernameFromToken("old.jwt.token");
+            verify(jwtTokenUtil).isTokenExpired("old.jwt.token");
+            verify(jwtTokenUtil).generateRefreshToken("testuser");
         }
 
         @Test
@@ -283,8 +283,8 @@ class AuthControllerTest {
             Map<String, String> refreshRequest = new HashMap<>();
             refreshRequest.put("token", "expired.jwt.token");
 
-            when(jwtTokenUtil.extractUsername("expired.jwt.token")).thenReturn("testuser");
-            when(jwtTokenUtil.canTokenBeRefreshed("expired.jwt.token")).thenReturn(false);
+            when(jwtTokenUtil.getUsernameFromToken("expired.jwt.token")).thenReturn("testuser");
+            when(jwtTokenUtil.isTokenExpired("expired.jwt.token")).thenReturn(true);
 
             // When & Then
             mockMvc.perform(post("/api/v1/auth/refresh")
@@ -293,8 +293,8 @@ class AuthControllerTest {
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.error").value("Token cannot be refreshed"));
 
-            verify(jwtTokenUtil).extractUsername("expired.jwt.token");
-            verify(jwtTokenUtil).canTokenBeRefreshed("expired.jwt.token");
+            verify(jwtTokenUtil).getUsernameFromToken("expired.jwt.token");
+            verify(jwtTokenUtil).isTokenExpired("expired.jwt.token");
             verifyNoMoreInteractions(jwtTokenUtil);
         }
     }
@@ -349,19 +349,19 @@ class AuthControllerTest {
             updatedUser.setTenantId("tenant_123");
 
             when(userService.findByUsername("testuser")).thenReturn(testUser);
-            when(userService.updateUser(any(User.class))).thenReturn(updatedUser);
+            when(userService.updateUser(eq(1L), any(User.class))).thenReturn(updatedUser);
 
             // When & Then
             mockMvc.perform(put("/api/v1/auth/profile")
                     .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(updateRequest)))
-                    .andExpected(status().isOk())
+                    .andExpect(status().isOk())
                     .andExpect(jsonPath("$.firstName").value("Updated"))
                     .andExpect(jsonPath("$.lastName").value("Name"));
 
             verify(userService).findByUsername("testuser");
-            verify(userService).updateUser(any(User.class));
+            verify(userService).updateUser(eq(1L), any(User.class));
         }
     }
 
@@ -377,7 +377,7 @@ class AuthControllerTest {
             Map<String, String> logoutRequest = new HashMap<>();
             logoutRequest.put("token", "valid.jwt.token");
 
-            when(jwtTokenUtil.extractUsername("valid.jwt.token")).thenReturn("testuser");
+            when(jwtTokenUtil.getUsernameFromToken("valid.jwt.token")).thenReturn("testuser");
             when(userService.findByUsername("testuser")).thenReturn(testUser);
 
             // When & Then
@@ -388,7 +388,7 @@ class AuthControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.message").value("Logout successful"));
 
-            verify(jwtTokenUtil).extractUsername("valid.jwt.token");
+            verify(jwtTokenUtil).getUsernameFromToken("valid.jwt.token");
             verify(userService).findByUsername("testuser");
         }
 

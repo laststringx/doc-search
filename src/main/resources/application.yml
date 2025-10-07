@@ -4,25 +4,36 @@ spring:
   profiles:
     active: production
 
-  # Reactive WebFlux Configuration
-  webflux:
-    base-path: /api/v1
+  # Spring MVC Configuration
+  mvc:
+    servlet:
+      path: /api/v1
     static-path-pattern: /static/**
     format:
       date-time: iso
 
-  # MySQL R2DBC Configuration
-  r2dbc:
-    url: r2dbc:mysql://mysql-primary:3306/document_search?useSSL=true&serverTimezone=UTC
+  # MySQL JPA Configuration  
+  datasource:
+    url: jdbc:mysql://mysql-primary:3306/document_search?useSSL=true&serverTimezone=UTC
     username: ${DB_USER:search_user}
     password: ${DB_PASSWORD:search_password}
-    pool:
-      initial-size: 20
-      max-size: 100
-      max-idle-time: 30m
-      validation-query: SELECT 1
-      acquire-retry: 3
-      max-acquire-time: 60s
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 20
+      maximum-pool-size: 100
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
+      
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        show_sql: false
+        format_sql: true
+    show-sql: false
 
   # Redis Cluster Configuration
   data:
